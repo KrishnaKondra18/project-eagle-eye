@@ -1,0 +1,40 @@
+name: "Eagle-Watcher"
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  eagle-talons:
+    name: "Security & Cost Check"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Eagle Checkout"
+        uses: actions/checkout@v4
+
+      # 💰 FINOPS: This catches expensive cloud mistakes before they happen
+      - name: "FinOps: Infracost"
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: "Run Infracost"
+        run: |
+          infracost breakdown --path terraform/ \
+                            --format json \
+                            --out-file /tmp/infracost.json
+          infracost comment github --path /tmp/infracost.json \
+                                 --repo $GITHUB_REPOSITORY \
+                                 --github-token ${{ github.token }} \
+                                 --pull-request ${{ github.event.pull_request.number }} \
+                                 --behavior update
+
+      # 🛡️ SECURITY: This scans your Docker and K8s files for "open doors"
+      - name: "Security: Trivy Scan"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          hide-progress: false
+          format: 'table'
+          exit-code: '0' 
+          severity: 'CRITICAL,HIGH'
