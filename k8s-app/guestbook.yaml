@@ -35,7 +35,7 @@ spec:
     spec:
       containers:
       - name: master
-        image: "gcr.io/google-samples/gb-frontend:v3"
+        image: "nginx:stable"
         ports:
         - containerPort: 6379
 ---
@@ -71,7 +71,7 @@ spec:
     spec:
       containers:
       - name: php-redis
-        image: "gcr.io/google-samples/gb-frontend:v3"
+        image: "nginx:stable"
         env:
         - name: GET_HOSTS_FROM
           value: dns
