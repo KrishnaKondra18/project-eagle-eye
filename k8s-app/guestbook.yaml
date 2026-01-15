@@ -35,7 +35,7 @@ spec:
     spec:
       containers:
       - name: master
-        image: "docker.io/redis:6.0.5"
+        image: "gcr.io/google-samples/gb-frontend:v6"
         ports:
         - containerPort: 6379
 ---
@@ -71,7 +71,7 @@ spec:
     spec:
       containers:
       - name: php-redis
-        image: "public.ecr.aws/bitnami/guestbook-frontend:latest"
+        image: "gcr.io/google-samples/gb-frontend:v6"
         env:
         - name: GET_HOSTS_FROM
           value: dns
