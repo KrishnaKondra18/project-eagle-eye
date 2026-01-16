@@ -24,32 +24,27 @@ metadata:
   namespace: monitoring
 data:
   config.alloy: |
-    // 1. COLLECT HOST METRICS (CPU/RAM of the Hardware)
-    prometheus.exporter.unix "local" { }
+    // 1. OTEL RECEIVER (This answers your doubt!)
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+      output {
+        metrics = [otelcol.exporter.prometheus.cloud.input]
+      }
+    }
 
+    otelcol.exporter.prometheus.cloud {
+      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+    }
+
+    // 2. METRIC SCRAPING
+    prometheus.exporter.unix "local" { }
     prometheus.scrape "unix_metrics" {
       targets    = prometheus.exporter.unix.local.targets
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    // 2. COLLECT CONTAINER METRICS (Fixes Query 3 and 4)
-    // This talks to the Kubelet on port 10250 to get pod stats
-    prometheus.scrape "kubernetes_nodes_cadvisor" {
-      targets = [{
-        __address__ = "localhost:10250",
-      }]
-      scheme = "https"
-      authorization {
-        type = "Bearer"
-        credentials_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-      }
-      tls_config {
-        insecure_skip_verify = true
-      }
-      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
-    }
-
-    // 3. SEND EVERYTHING TO GRAFANA CLOUD
+    // 3. REMOTE WRITE
     prometheus.remote_write "grafana_cloud" {
       endpoint {
         url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
@@ -58,18 +53,15 @@ data:
           password = env("GRAFANA_TOKEN")
         }
       }
-      external_labels = {
-        cluster = "eagle-eye",
-      }
+      external_labels = { cluster = "eagle-eye" }
     }
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet # Changed from Deployment for better coverage
 metadata:
   name: grafana-alloy
   namespace: monitoring
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: grafana-alloy
@@ -79,7 +71,6 @@ spec:
         app: grafana-alloy
     spec:
       serviceAccountName: alloy-sa
-      hostNetwork: true  // Required to talk to localhost:10250 directly
       containers:
       - name: alloy
         image: grafana/alloy:latest
