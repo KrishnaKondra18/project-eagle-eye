@@ -1,94 +1,100 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: alloy-sa
-  namespace: monitoring
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: alloy-view
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: view
-subjects:
-- kind: ServiceAccount
-  name: alloy-sa
-  namespace: monitoring
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: alloy-config
-  namespace: monitoring
-data:
-  config.alloy: |
-    // 1. OTEL RECEIVER (OpenTelemetry Entry Point)
-    otelcol.receiver.otlp "default" {
-      grpc { endpoint = "0.0.0.0:4317" }
-      http { endpoint = "0.0.0.0:4318" }
-      output {
-        metrics = [otelcol.exporter.prometheus.to_cloud.input]
-      }
-    }
-
-    // 2. OTEL TO PROMETHEUS BRIDGE
-    otelcol.exporter.prometheus "to_cloud" {
-      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
-    }
-
-    // 3. INFRASTRUCTURE SCRAPING (Hardware Stats)
-    prometheus.exporter.unix "local" { }
-    prometheus.scrape "unix_metrics" {
-      targets    = prometheus.exporter.unix.local.targets
-      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
-    }
-
-    // 4. REMOTE WRITE (The Exit Point to Grafana Cloud)
-    prometheus.remote_write "grafana_cloud" {
-      endpoint {
-        url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
-        basic_auth {
-          username = env("GRAFANA_USER")
-          password = env("GRAFANA_TOKEN")
-        }
-      }
-      external_labels = { cluster = "eagle-eye" }
-    }
----
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
-  name: grafana-alloy
-  namespace: monitoring
+  name: redis-master
+  labels:
+    app: redis
+    role: master
+    tier: backend
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      app: grafana-alloy
+      app: redis
+      role: master
+      tier: backend
   template:
     metadata:
       labels:
-        app: grafana-alloy
+        app: redis
+        role: master
+        tier: backend
     spec:
-      serviceAccountName: alloy-sa
       containers:
-      - name: alloy
-        image: grafana/alloy:latest
-        args: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
-        env:
-          - name: GRAFANA_USER
-            valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: user } }
-          - name: GRAFANA_TOKEN
-            valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: key } }
+      - name: master
+        image: registry.k8s.io/redis:e2e
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
         ports:
-          - containerPort: 4317
-            name: otlp-grpc
-          - containerPort: 4318
-            name: otlp-http
-        volumeMounts:
-          - name: config
-            mountPath: /etc/alloy
-      volumes:
-        - name: config
-          configMap: { name: alloy-config }
+        - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+  labels:
+    app: redis
+    role: master
+    tier: backend
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: redis
+    role: master
+    tier: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guestbook
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        tier: frontend
+    spec:
+      containers:
+      - name: guestbook
+        image: google_samples/gb-frontend:v3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        env:
+        # --- OPEN TELEMETRY INSTRUMENTATION ---
+        - name: GET_HOSTS_FROM
+          value: dns
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.monitoring.svc.cluster.local:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "guestbook-ui"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "cluster=eagle-eye,env=production"
+        # ---------------------------------------
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guestbook-ui
+  labels:
+    app: guestbook
+    tier: frontend
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+  selector:
+    app: guestbook
+    tier: frontend
