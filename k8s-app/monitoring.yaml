@@ -20,6 +20,10 @@ data:
           password = env("GRAFANA_TOKEN")
         }
       }
+      // Senior SRE Fix: Add static labels for dashboard compatibility
+      external_labels = {
+        cluster = "eagle-eye",
+      }
     }
 ---
 apiVersion: apps/v1
