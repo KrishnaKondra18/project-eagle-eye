@@ -24,6 +24,7 @@ metadata:
   namespace: monitoring
 data:
   config.alloy: |
+    // 1. COLLECT HOST METRICS (CPU/RAM of the Hardware)
     prometheus.exporter.unix "local" { }
 
     prometheus.scrape "unix_metrics" {
@@ -31,9 +32,11 @@ data:
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    prometheus.scrape "kubernetes_pods" {
+    // 2. COLLECT CONTAINER METRICS (Fixes Query 3 and 4)
+    // This talks to the Kubelet on port 10250 to get pod stats
+    prometheus.scrape "kubernetes_nodes_cadvisor" {
       targets = [{
-        __address__ = "kubernetes.default.svc:443",
+        __address__ = "localhost:10250",
       }]
       scheme = "https"
       authorization {
@@ -41,12 +44,12 @@ data:
         credentials_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
       }
       tls_config {
-        ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
         insecure_skip_verify = true
       }
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
+    // 3. SEND EVERYTHING TO GRAFANA CLOUD
     prometheus.remote_write "grafana_cloud" {
       endpoint {
         url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
@@ -76,6 +79,7 @@ spec:
         app: grafana-alloy
     spec:
       serviceAccountName: alloy-sa
+      hostNetwork: true  // Required to talk to localhost:10250 directly
       containers:
       - name: alloy
         image: grafana/alloy:latest
