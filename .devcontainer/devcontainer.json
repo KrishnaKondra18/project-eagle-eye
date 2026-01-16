@@ -1,0 +1,10 @@
+{
+    "name": "Project Eagle Eye",
+    "forwardPorts": [8080, 8081, 8888],
+    "portsAttributes": {
+        "8080": { "label": "App Front Door (LoadBalancer)", "onAutoForward": "notify" },
+        "8081": { "label": "Frontend (Direct Service)", "onAutoForward": "silent" },
+        "8888": { "label": "ArgoCD Dashboard", "onAutoForward": "silent" }
+    },
+    "postStartCommand": "pkill -f 'kubectl port-forward' || true && kubectl port-forward svc/argocd-server -n argocd 8888:443 & kubectl port-forward svc/frontend -n guestbook-spoke 8081:80 &"
+}
