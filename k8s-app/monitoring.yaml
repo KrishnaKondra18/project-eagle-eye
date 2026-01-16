@@ -24,27 +24,28 @@ metadata:
   namespace: monitoring
 data:
   config.alloy: |
-    // 1. OTEL RECEIVER (This answers your doubt!)
+    // 1. OTEL RECEIVER (OpenTelemetry Entry Point)
     otelcol.receiver.otlp "default" {
       grpc { endpoint = "0.0.0.0:4317" }
       http { endpoint = "0.0.0.0:4318" }
       output {
-        metrics = [otelcol.exporter.prometheus.cloud.input]
+        metrics = [otelcol.exporter.prometheus.to_cloud.input]
       }
     }
 
-    otelcol.exporter.prometheus.cloud {
+    // 2. OTEL TO PROMETHEUS BRIDGE
+    otelcol.exporter.prometheus "to_cloud" {
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    // 2. METRIC SCRAPING
+    // 3. INFRASTRUCTURE SCRAPING (Hardware Stats)
     prometheus.exporter.unix "local" { }
     prometheus.scrape "unix_metrics" {
       targets    = prometheus.exporter.unix.local.targets
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    // 3. REMOTE WRITE
+    // 4. REMOTE WRITE (The Exit Point to Grafana Cloud)
     prometheus.remote_write "grafana_cloud" {
       endpoint {
         url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
@@ -57,7 +58,7 @@ data:
     }
 ---
 apiVersion: apps/v1
-kind: DaemonSet # Changed from Deployment for better coverage
+kind: DaemonSet
 metadata:
   name: grafana-alloy
   namespace: monitoring
@@ -80,6 +81,11 @@ spec:
             valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: user } }
           - name: GRAFANA_TOKEN
             valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: key } }
+        ports:
+          - containerPort: 4317
+            name: otlp-grpc
+          - containerPort: 4318
+            name: otlp-http
         volumeMounts:
           - name: config
             mountPath: /etc/alloy
