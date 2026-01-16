@@ -1,11 +1,29 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy-sa
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: ServiceAccount
+  name: alloy-sa
+  namespace: monitoring
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: alloy-config
   namespace: monitoring
 data:
   config.alloy: |
-    // 1. Collect Host Metrics (CPU/RAM of the Nodes)
     prometheus.exporter.unix "local" { }
 
     prometheus.scrape "unix_metrics" {
@@ -13,8 +31,6 @@ data:
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    // 2. Collect Container Metrics (This fixes the "No Data" pods)
-    // We scrape the Kubelet API which contains cAdvisor data
     prometheus.scrape "kubernetes_pods" {
       targets = [{
         __address__ = "kubernetes.default.svc:443",
@@ -31,7 +47,6 @@ data:
       forward_to = [prometheus.remote_write.grafana_cloud.receiver]
     }
 
-    // 3. Send everything to the Cloud
     prometheus.remote_write "grafana_cloud" {
       endpoint {
         url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
@@ -60,8 +75,7 @@ spec:
       labels:
         app: grafana-alloy
     spec:
-      // SRE NOTE: Alloy needs permission to talk to the K8s API
-      serviceAccountName: alloy-sa 
+      serviceAccountName: alloy-sa
       containers:
       - name: alloy
         image: grafana/alloy:latest
@@ -77,23 +91,3 @@ spec:
       volumes:
         - name: config
           configMap: { name: alloy-config }
----
-// This gives Alloy the "ID Card" to talk to Kubernetes
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: alloy-sa
-  namespace: monitoring
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: alloy-view
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: view
-subjects:
-- kind: ServiceAccount
-  name: alloy-sa
-  namespace: monitoring
