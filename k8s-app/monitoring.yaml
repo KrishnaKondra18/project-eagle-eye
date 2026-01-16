@@ -1,0 +1,131 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-alloy
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-read-k8s
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-read-k8s-binding
+subjects:
+  - kind: ServiceAccount
+    name: grafana-alloy
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: alloy-read-k8s
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    prometheus.remote_write "grafana_cloud" {
+      endpoint {
+        url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
+        basic_auth {
+          username = sys.env("GRAFANA_USER")
+          password = sys.env("GRAFANA_TOKEN")
+        }
+      }
+    }
+
+    discovery.kubernetes "all_pods" {
+      role = "pod"
+    }
+
+    prometheus.scrape "kubernetes_pods" {
+      targets    = discovery.kubernetes.all_pods.targets
+      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+
+      relabel_config {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      relabel_config {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+    }
+
+    prometheus.exporter.unix "node_stats" {}
+
+    prometheus.scrape "linux_node" {
+      targets    = prometheus.exporter.unix.node_stats.targets
+      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: grafana-alloy
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: grafana-alloy
+  template:
+    metadata:
+      labels:
+        app: grafana-alloy
+    spec:
+      serviceAccountName: grafana-alloy
+      containers:
+        - name: alloy
+          image: grafana/alloy:latest
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy/data
+            - --server.http.listen-addr=0.0.0.0:12345
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # --- INTEGRATING YOUR EXISTING SECRET ---
+            - name: GRAFANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-cloud-credentials
+                  key: user
+            - name: GRAFANA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-cloud-credentials
+                  key: token
+          ports:
+            - containerPort: 12345
+              name: http-metrics
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+            - name: data
+              mountPath: /var/lib/alloy/data
+      volumes:
+        - name: config
+          configMap:
+            name: alloy-config
+        - name: data
+          emptyDir: {}

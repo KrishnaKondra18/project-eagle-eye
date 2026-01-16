@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-leader
+  namespace: guestbook-spoke
+  labels:
+    app: redis
+    role: leader
+    tier: backend
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: redis
+    role: leader
+    tier: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-leader
+  namespace: guestbook-spoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      role: leader
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: leader
+        tier: backend
+    spec:
+      containers:
+      - name: master
+        image: "registry.k8s.io/redis:e2e"
+        ports:
+        - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: guestbook-spoke
+  labels:
+    app: guestbook
+    tier: frontend
+spec:
+  ports:
+  - port: 80
+  selector:
+    app: guestbook
+    tier: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: guestbook-spoke
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: guestbook
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        tier: frontend
+    spec:
+      containers:
+      - name: guestbook
+        image: gcr.io/google-samples/gb-frontend:v3 # Fixed path
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        env:
+        - name: GET_HOSTS_FROM
+          value: dns
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.monitoring.svc.cluster.local:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "guestbook-ui"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "cluster=eagle-eye,env=production"
+        ports:
+        - containerPort: 80
+        
