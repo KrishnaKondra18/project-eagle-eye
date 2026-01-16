@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    prometheus.exporter.unix "local" { }
+
+    prometheus.scrape "metrics" {
+      targets    = prometheus.exporter.unix.local.targets
+      forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+    }
+
+    prometheus.remote_write "grafana_cloud" {
+      endpoint {
+        url = "https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push"
+        basic_auth {
+          username = env("GRAFANA_USER")
+          password = env("GRAFANA_TOKEN")
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-alloy
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana-alloy
+  template:
+    metadata:
+      labels:
+        app: grafana-alloy
+    spec:
+      containers:
+      - name: alloy
+        image: grafana/alloy:latest
+        args: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+        env:
+          - name: GRAFANA_USER
+            valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: user } }
+          - name: GRAFANA_TOKEN
+            valueFrom: { secretKeyRef: { name: grafana-cloud-credentials, key: key } }
+        volumeMounts:
+          - name: config
+            mountPath: /etc/alloy
+      volumes:
+        - name: config
+          configMap: { name: alloy-config }
