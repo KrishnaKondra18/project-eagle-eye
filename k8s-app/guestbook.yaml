@@ -37,9 +37,13 @@ spec:
     spec:
       containers:
       - name: master
-        image: "registry.k8s.io/redis:e2e"
+        image: redis:alpine
         ports:
         - containerPort: 6379
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
 ---
 apiVersion: v1
 kind: Service
@@ -75,7 +79,7 @@ spec:
     spec:
       containers:
       - name: guestbook
-        image: gcr.io/google-samples/gb-frontend:v3 # Fixed path
+        image: nginx:alpine
         resources:
           requests:
             cpu: 100m
@@ -84,11 +88,10 @@ spec:
         - name: GET_HOSTS_FROM
           value: dns
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://alloy.monitoring.svc.cluster.local:4317"
+          value: "http://grafana-alloy.monitoring.svc.cluster.local:4317"
         - name: OTEL_SERVICE_NAME
           value: "guestbook-ui"
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "cluster=eagle-eye,env=production"
         ports:
         - containerPort: 80
-        
