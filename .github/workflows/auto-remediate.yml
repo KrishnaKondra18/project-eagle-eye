@@ -76,13 +76,10 @@ jobs:
           git config user.email "eagle-eye-bot@noreply.github.com"
           
           git add k8s-app/
-          git commit -m "🤖 Auto-remediation: ${{ steps.remediate.outputs.action }}
-
-Alert: ${{ steps.alert.outputs.alert_name }}
-Pod: ${{ steps.alert.outputs.pod }}
-Namespace: ${{ steps.alert.outputs.namespace }}
-
-Triggered by Grafana alert at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git commit -m "Auto-remediation: ${{ steps.remediate.outputs.action }}" \
+            -m "Alert: ${{ steps.alert.outputs.alert_name }}" \
+            -m "Pod: ${{ steps.alert.outputs.pod }}" \
+            -m "Namespace: ${{ steps.alert.outputs.namespace }}"
           
           git push origin main
           
