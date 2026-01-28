@@ -9,12 +9,18 @@ metadata:
     tier: backend
 spec:
   ports:
-  - port: 6379
-    targetPort: 6379
+    - port: 6379
+      targetPort: 6379
   selector:
     app: redis
     role: leader
     tier: backend
+  template:
+    spec:
+      containers:
+        - resources:
+            limits:
+              memory: 150Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -36,14 +42,16 @@ spec:
         tier: backend
     spec:
       containers:
-      - name: master
-        image: redis:alpine
-        ports:
-        - containerPort: 6379
-        resources:
-          requests:
-            cpu: 100m
-            memory: 100Mi
+        - name: master
+          image: redis:alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 100Mi
+            limits:
+              memory: 150Mi
 ---
 apiVersion: v1
 kind: Service
@@ -55,10 +63,16 @@ metadata:
     tier: frontend
 spec:
   ports:
-  - port: 80
+    - port: 80
   selector:
     app: guestbook
     tier: frontend
+  template:
+    spec:
+      containers:
+        - resources:
+            limits:
+              memory: 150Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -78,20 +92,22 @@ spec:
         tier: frontend
     spec:
       containers:
-      - name: guestbook
-        image: nginx:alpine
-        resources:
-          requests:
-            cpu: 100m
-            memory: 100Mi
-        env:
-        - name: GET_HOSTS_FROM
-          value: dns
-        - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://grafana-alloy.monitoring.svc.cluster.local:4317"
-        - name: OTEL_SERVICE_NAME
-          value: "guestbook-ui"
-        - name: OTEL_RESOURCE_ATTRIBUTES
-          value: "cluster=eagle-eye,env=production"
-        ports:
-        - containerPort: 80
+        - name: guestbook
+          image: nginx:alpine
+          resources:
+            requests:
+              cpu: 100m
+              memory: 100Mi
+            limits:
+              memory: 150Mi
+          env:
+            - name: GET_HOSTS_FROM
+              value: dns
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://grafana-alloy.monitoring.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "guestbook-ui"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "cluster=eagle-eye,env=production"
+          ports:
+            - containerPort: 80
