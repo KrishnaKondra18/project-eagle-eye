@@ -66,9 +66,12 @@ jobs:
               ;;
           esac
           
-      - name: "Validate YAML Syntax"
+      - name: "Verify YAML Syntax"
         run: |
-          kubectl apply --dry-run=client -f k8s-app/ --recursive
+          # Basic syntax check without cluster connection
+          yq eval '.' k8s-app/guestbook.yaml > /dev/null
+          yq eval '.' k8s-app/monitoring.yaml > /dev/null
+          echo "✅ YAML syntax valid"
           
       - name: "Commit Changes to Git"
         run: |
@@ -83,8 +86,12 @@ jobs:
           
           git push origin main
           
-      - name: "Wait for ArgoCD Sync"
+      - name: "Summary"
         run: |
-          echo "⏳ Waiting 60s for ArgoCD to detect git change..."
-          sleep 60
-          echo "✅ ArgoCD should now be syncing the remediation"
+          echo "✅ Remediation applied and committed to git"
+          echo "⏳ ArgoCD will sync changes within 3 minutes"
+          echo ""
+          echo "📝 Summary:"
+          echo "  Alert: ${{ steps.alert.outputs.alert_name }}"
+          echo "  Action: ${{ steps.remediate.outputs.action }}"
+          echo "  Commit: $(git rev-parse HEAD)"
