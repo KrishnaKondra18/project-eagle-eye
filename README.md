@@ -4,6 +4,12 @@
 
 ---
 
+## Architecture
+
+![Architecture Diagram](./docs/eagle_eye_diagram.jpg)
+
+---
+
 ## Executive Summary
 
 Project Eagle Eye provides comprehensive observability for cloud-native applications running on Kubernetes, implementing the Golden Signals framework through Grafana Alloy telemetry collection and Prometheus Remote Write protocol. The platform enables SRE teams to detect and auto-remediate infrastructure drift with GitOps-powered ArgoCD orchestration.
