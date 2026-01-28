@@ -1,0 +1,93 @@
+name: "🤖 Auto-Heal Infrastructure"
+
+on:
+  repository_dispatch:
+    types: [grafana-alert, manual-remediation]
+
+jobs:
+  analyze-alert:
+    name: "Analyze Alert & Remediate"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          
+      - name: "Install yq (YAML processor)"
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          
+      - name: "Parse Alert Payload"
+        id: alert
+        run: |
+          ALERT_NAME="${{ github.event.client_payload.alert_name }}"
+          POD_NAME="${{ github.event.client_payload.labels.pod }}"
+          NAMESPACE="${{ github.event.client_payload.labels.namespace }}"
+          
+          echo "alert_name=$ALERT_NAME" >> $GITHUB_OUTPUT
+          echo "pod=$POD_NAME" >> $GITHUB_OUTPUT
+          echo "namespace=$NAMESPACE" >> $GITHUB_OUTPUT
+          
+          echo "🚨 Alert received: $ALERT_NAME for pod $POD_NAME in $NAMESPACE"
+          
+      - name: "Apply Remediation Logic"
+        id: remediate
+        run: |
+          ALERT="${{ steps.alert.outputs.alert_name }}"
+          
+          case "$ALERT" in
+            "HighMemoryUsage")
+              echo "📊 Increasing memory limit by 50%"
+              yq eval '.spec.template.spec.containers[0].resources.limits.memory = "150Mi"' \
+                -i k8s-app/guestbook.yaml
+              echo "action=Increased memory to 150Mi" >> $GITHUB_OUTPUT
+              ;;
+              
+            "HighCPUUsage")
+              echo "⚡ Scaling up replicas"
+              yq eval '.spec.replicas = 5' -i k8s-app/guestbook.yaml
+              echo "action=Scaled to 5 replicas" >> $GITHUB_OUTPUT
+              ;;
+              
+            "PodCrashLoop")
+              echo "🔄 Rolling back to previous version"
+              yq eval '.spec.template.spec.containers[0].image = "nginx:1.25-alpine"' \
+                -i k8s-app/guestbook.yaml
+              echo "action=Rolled back to nginx:1.25-alpine" >> $GITHUB_OUTPUT
+              ;;
+              
+            *)
+              echo "::error::Unknown alert type: $ALERT"
+              echo "action=No remediation available" >> $GITHUB_OUTPUT
+              exit 1
+              ;;
+          esac
+          
+      - name: "Validate YAML Syntax"
+        run: |
+          kubectl apply --dry-run=client -f k8s-app/ --recursive
+          
+      - name: "Commit Changes to Git"
+        run: |
+          git config user.name "eagle-eye-bot"
+          git config user.email "eagle-eye-bot@noreply.github.com"
+          
+          git add k8s-app/
+          git commit -m "🤖 Auto-remediation: ${{ steps.remediate.outputs.action }}
+
+Alert: ${{ steps.alert.outputs.alert_name }}
+Pod: ${{ steps.alert.outputs.pod }}
+Namespace: ${{ steps.alert.outputs.namespace }}
+
+Triggered by Grafana alert at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          
+          git push origin main
+          
+      - name: "Wait for ArgoCD Sync"
+        run: |
+          echo "⏳ Waiting 60s for ArgoCD to detect git change..."
+          sleep 60
+          echo "✅ ArgoCD should now be syncing the remediation"
